@@ -18,46 +18,45 @@ import java.io.*;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.*;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-public class TomlConfiguration extends ConfigurationProvider {
+public class TomlConfigurationOld extends ConfigurationProvider {
 
-    public TomlConfiguration() {
+    public TomlConfigurationOld() {
     }
 
     @Override
-    public Object load(Class<?> clazz, @Nonnull InputStream is, @Nonnull Object defaultConfiguration) {
+    public Object load(Class<?> configClass, @Nonnull InputStream is, @Nonnull Object defaultConfiguration) {
         Toml toml = new Toml().read(new InputStreamReader(is, Charsets.UTF_8));
 
         Object configuration;
 
         try {
-            configuration = clazz.getConstructor().newInstance();
+            configuration = configClass.getConstructor().newInstance();
         } catch (InstantiationException | IllegalAccessException | InvocationTargetException |
                  NoSuchMethodException e) {
             throw new IllegalArgumentException("Failed to initialize configuration class", e);
         }
 
-        loadConfig(toml.toMap(), clazz, configuration);
-
-        setDefaults(clazz, configuration, defaultConfiguration);
+        setDefaults(configClass, configuration, defaultConfiguration);
+        loadConfig(toml.toMap(), configClass, configuration);
 
         return configuration;
     }
 
     @Override
-    public Object load(Class<?> clazz, @Nonnull InputStream is, @Nonnull InputStream defaultConfiguration) {
+    public Object load(Class<?> configClass, @Nonnull InputStream is, @Nonnull InputStream defaultConfiguration) {
         Toml toml = new Toml().read(new InputStreamReader(is, Charsets.UTF_8));
 
         Object configuration;
 
         try {
-            configuration = clazz.getConstructor().newInstance();
+            configuration = configClass.getConstructor().newInstance();
         } catch (InstantiationException | IllegalAccessException | InvocationTargetException |
                  NoSuchMethodException e) {
             throw new IllegalArgumentException("Failed to initialize configuration class", e);
@@ -66,7 +65,7 @@ public class TomlConfiguration extends ConfigurationProvider {
         Map<String, Object> configurationMap = toml.toMap();
         setDefaults(configurationMap, new Toml().read(new InputStreamReader(defaultConfiguration, Charsets.UTF_8)).toMap());
 
-        loadConfig(configurationMap, clazz, configuration);
+        loadConfig(configurationMap, configClass, configuration);
 
         return configuration;
     }
@@ -82,7 +81,7 @@ public class TomlConfiguration extends ConfigurationProvider {
     }
 
     private void setDefaults(Class<?> clazz, @Nonnull Object configuration, @Nonnull Object defaultConfiguration) {
-        for (Field field : clazz.getDeclaredFields()) {
+        for (Field field : getFields(clazz)) {
             if (!field.isAnnotationPresent(ConfigField.class)) continue;
 
             Optional<Method> fieldGetter = findGetter(clazz, field);
@@ -94,7 +93,7 @@ public class TomlConfiguration extends ConfigurationProvider {
                 Object fieldValue = fieldGetter.get().invoke(configuration);
                 Object defaultValue = fieldGetter.get().invoke(defaultConfiguration);
 
-                if (fieldValue == null) continue;
+                if (fieldValue == null || defaultValue == null) continue;
 
                 if (fieldValue instanceof ConfigEntry &&
                         defaultValue instanceof ConfigEntry
@@ -127,7 +126,7 @@ public class TomlConfiguration extends ConfigurationProvider {
 
         Map<String, Object> serialized = Maps.newHashMap();
 
-        for (Field field : clazz.getDeclaredFields()) {
+        for (Field field : getFields(clazz)) {
             if (!field.isAnnotationPresent(ConfigField.class)) continue;
 
             ConfigField configField = field.getAnnotation(ConfigField.class);
@@ -169,20 +168,20 @@ public class TomlConfiguration extends ConfigurationProvider {
     }
 
     @Override
-    public void deserialize(Object object, Object serializedObject) {
-        if (object instanceof SerializableConfigEntry) {
-            ((SerializableConfigEntry) object).deserialize(serializedObject);
+    public void deserialize(Object targetObject, Object map) {
+        if (targetObject instanceof SerializableConfigEntry) {
+            ((SerializableConfigEntry) targetObject).deserialize(map);
             return;
         }
 
-        Class<?> clazz = object.getClass();
+        Class<?> clazz = targetObject.getClass();
         if (!clazz.isAnnotationPresent(Config.class)) {
             throw new IllegalArgumentException("Class not annotated with @Config");
         }
 
-        Map<String, Object> serialized = (Map<String, Object>) serializedObject;
-
-        for (Field field : clazz.getDeclaredFields()) {
+        Map<String, Object> serialized = (Map<String, Object>) map;
+        
+        for (Field field : getFields(clazz)) {
             if (!field.isAnnotationPresent(ConfigField.class)) continue;
 
             ConfigField configField = field.getAnnotation(ConfigField.class);
@@ -197,7 +196,7 @@ public class TomlConfiguration extends ConfigurationProvider {
             if (!fieldGetter.isPresent() || !fieldSetter.isPresent()) continue;
 
             try {
-                Object fieldValue = fieldGetter.get().invoke(object);
+                Object fieldValue = fieldGetter.get().invoke(targetObject);
                 Object serializedValue = serialized.get(configPath);
                 if (fieldValue == null) continue;
 
@@ -209,11 +208,12 @@ public class TomlConfiguration extends ConfigurationProvider {
                     }
                 }
 
+                // apply config processors
                 if (field.isAnnotationPresent(ConfigFieldProcessor.class)) {
-                    ConfigFieldProcessor configProcessor = field.getAnnotation(ConfigFieldProcessor.class);
-                    Function<Object, Object> processor = (Function<Object, Object>) configProcessor.value().getConstructor().newInstance();
-
-                    serializedValue = processor.apply(serializedValue);
+                    serializedValue = applyProcessors(field.getAnnotation(ConfigFieldProcessor.class), serializedValue);
+                }
+                if (clazz.isAnnotationPresent(ConfigFieldProcessor.class)) {
+                    serializedValue = applyProcessors(clazz.getAnnotation(ConfigFieldProcessor.class), serializedValue);
                 }
 
                 if (fieldValue.getClass().isAnnotationPresent(Config.class)) {
@@ -223,13 +223,25 @@ public class TomlConfiguration extends ConfigurationProvider {
                     configEntry.deserialize(serializedValue);
                 } else {
                     if (field.getType() == int.class) {
-                        fieldSetter.get().invoke(object, ((Long) serializedValue).intValue());
+                        fieldSetter.get().invoke(targetObject, ((Long) serializedValue).intValue());
                     } else if (field.getType() == short.class) {
-                        fieldSetter.get().invoke(object, ((Long) serializedValue).shortValue());
+                        fieldSetter.get().invoke(targetObject, ((Long) serializedValue).shortValue());
                     } else if (field.getType() == boolean.class) {
-                        fieldSetter.get().invoke(object, ((Boolean) serializedValue).booleanValue());
+                        fieldSetter.get().invoke(targetObject, ((Boolean) serializedValue).booleanValue());
+                    } else if (field.getType() == double.class) {
+                        fieldSetter.get().invoke(targetObject, (Double) serializedValue);
+                    } else if (field.getType() == float.class) {
+                        fieldSetter.get().invoke(targetObject, ((Double) serializedValue).floatValue());
+                    } else if (field.getType().isEnum()) {
+                        Class<? extends Enum> enumClass = (Class<? extends Enum<?>>) field.getType();
+
+                        try {
+                            fieldSetter.get().invoke(targetObject, Enum.valueOf(enumClass, (String) serializedValue));
+                        } catch (Exception ignored) {
+                            fieldSetter.get().invoke(targetObject, enumClass.getEnumConstants()[0]);
+                        }
                     } else {
-                        fieldSetter.get().invoke(object, field.getType().cast(serializedValue));
+                        fieldSetter.get().invoke(targetObject, field.getType().cast(serializedValue));
                     }
                 }
             } catch (IllegalAccessException | InvocationTargetException | InstantiationException |
@@ -240,8 +252,8 @@ public class TomlConfiguration extends ConfigurationProvider {
     }
 
     @Override
-    public void save(Class<?> clazz, @Nonnull Object configuration, @Nonnull File file) throws IOException {
-        if (!clazz.isAnnotationPresent(Config.class)) {
+    public void save(Class<?> targetClass, @Nonnull Object configuration, @Nonnull File file) throws IOException {
+        if (!targetClass.isAnnotationPresent(Config.class)) {
             throw new IllegalArgumentException("Class not annotated with @Config");
         }
 
@@ -249,13 +261,13 @@ public class TomlConfiguration extends ConfigurationProvider {
             file.getParentFile().mkdirs();
         }
 
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(file.getAbsolutePath()))) {
-            writeClass(writer, clazz, configuration, "", "");
+        try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(Files.newOutputStream(Paths.get(file.getAbsolutePath())), StandardCharsets.UTF_8))) {
+            writeClass(writer, targetClass, configuration, "", "");
         }
     }
 
     private void loadConfig(Map<String, Object> mapConfig, Class<?> clazz, Object configuration) {
-        for (Field field : clazz.getDeclaredFields()) {
+        for (Field field : getFields(clazz)) {
             if (!field.isAnnotationPresent(ConfigField.class)) continue;
 
             ConfigField configField = field.getAnnotation(ConfigField.class);
@@ -275,8 +287,17 @@ public class TomlConfiguration extends ConfigurationProvider {
 
             try {
                 Object fieldValue = fieldGetter.get().invoke(configuration);
+                Class<?> returnType = fieldGetter.get().getReturnType();
                 Object configValue = mapConfig.get(configPath);
-                if (fieldValue == null) continue;
+
+                if (fieldValue == null) {
+                    if (!returnType.isAnnotationPresent(Config.class)) {
+                        continue;
+                    }
+
+                    fieldValue = returnType.getConstructor().newInstance();
+                    fieldSetter.get().invoke(configuration, fieldValue);
+                }
 
                 if (field.isAnnotationPresent(ConfigValidator.class)) {
                     ConfigValidator configValidator = field.getAnnotation(ConfigValidator.class);
@@ -286,11 +307,9 @@ public class TomlConfiguration extends ConfigurationProvider {
                     }
                 }
 
+                // apply config processors
                 if (field.isAnnotationPresent(ConfigFieldProcessor.class)) {
-                    ConfigFieldProcessor configProcessor = field.getAnnotation(ConfigFieldProcessor.class);
-                    Function<Object, Object> processor = (Function<Object, Object>) configProcessor.value().getConstructor().newInstance();
-
-                    configValue = processor.apply(configValue);
+                    configValue = applyProcessors(field.getAnnotation(ConfigFieldProcessor.class), configValue);
                 }
 
                 if (fieldValue.getClass().isAnnotationPresent(Config.class)) {
@@ -309,6 +328,18 @@ public class TomlConfiguration extends ConfigurationProvider {
                         fieldSetter.get().invoke(configuration, ((Long) configValue).shortValue());
                     } else if (field.getType() == boolean.class) {
                         fieldSetter.get().invoke(configuration, ((Boolean) configValue).booleanValue());
+                    } else if (field.getType() == double.class) {
+                        fieldSetter.get().invoke(configuration, (Double) configValue);
+                    } else if (field.getType() == float.class) {
+                        fieldSetter.get().invoke(configuration, ((Double) configValue).floatValue());
+                    } else if (field.getType().isEnum()) {
+                        Class<? extends Enum> enumClass = (Class<? extends Enum<?>>) field.getType();
+
+                        try {
+                            fieldSetter.get().invoke(configuration, Enum.valueOf(enumClass, (String) configValue));
+                        } catch (Exception ignored) {
+                            fieldSetter.get().invoke(configuration, enumClass.getEnumConstants()[0]);
+                        }
                     } else {
                         fieldSetter.get().invoke(configuration, field.getType().cast(configValue));
                     }
@@ -328,7 +359,7 @@ public class TomlConfiguration extends ConfigurationProvider {
             writer.write("\n");
         }
 
-        for (Field field : clazz.getDeclaredFields()) {
+        for (Field field : getFields(clazz)) {
             if (!field.isAnnotationPresent(ConfigField.class)) continue;
 
             ConfigField configField = field.getAnnotation(ConfigField.class);
@@ -438,5 +469,25 @@ public class TomlConfiguration extends ConfigurationProvider {
                                 method.getName().equalsIgnoreCase("is" + field.getName()))
                 )
                 .findFirst();
+    }
+
+    private List<Field> getFields(Class<?> clazz) {
+        List<Field> fields = new ArrayList<>();
+        while (clazz != Object.class) {
+            fields.addAll(0, Arrays.asList(clazz.getDeclaredFields()));
+            clazz = clazz.getSuperclass();
+        }
+        return fields;
+    }
+
+    private Object applyProcessors(final ConfigFieldProcessor fieldProcessor, final Object value)
+            throws InstantiationException, IllegalAccessException {
+        Object processedValue = value;
+        for (Class<? extends Function<?, ?>> classProcessor : fieldProcessor.value()) {
+            Function<Object, Object> processor = (Function<Object, Object>) classProcessor.newInstance();
+            processedValue = processor.apply(value);
+        }
+
+        return processedValue;
     }
 }

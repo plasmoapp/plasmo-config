@@ -11,7 +11,7 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 @Target(value = FIELD)
 public @interface ConfigValidator {
 
-    Class<? extends Predicate<?>> value();
+    Class<? extends Predicate<? extends Object>> value();
 
     String[] allowed();
 }

@@ -81,13 +81,13 @@ public abstract class ConfigurationProvider {
         }
     }
 
-    protected abstract Object load(Class<?> clazz, @Nonnull InputStream is, @Nonnull Object defaultConfiguration) throws IOException;
+    protected abstract Object load(Class<?> configClass, @Nonnull InputStream is, @Nonnull Object defaultConfiguration) throws IOException;
 
-    protected abstract Object load(Class<?> clazz, @Nonnull InputStream is, @Nonnull InputStream defaultConfiguration) throws IOException;
+    protected abstract Object load(Class<?> configClass, @Nonnull InputStream is, @Nonnull InputStream defaultConfiguration) throws IOException;
 
     public abstract Object serialize(Object object);
 
-    public abstract void deserialize(Object object, Object serialized);
+    public abstract void deserialize(Object targetObject, Object map);
 
-    public abstract void save(Class<?> clazz, @Nonnull Object configuration, @Nonnull File file) throws IOException;
+    public abstract void save(Class<?> targetClass, @Nonnull Object configuration, @Nonnull File file) throws IOException;
 }

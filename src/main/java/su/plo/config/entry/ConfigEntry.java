@@ -1,5 +1,7 @@
 package su.plo.config.entry;
 
+import lombok.Getter;
+import lombok.Setter;
 import lombok.ToString;
 
 import java.util.List;
@@ -15,6 +17,10 @@ public class ConfigEntry<E> implements SerializableConfigEntry {
     protected transient E defaultValue;
     protected E value = null;
 
+    @Setter
+    @Getter
+    protected boolean disabled;
+
     public ConfigEntry(E defaultValue) {
         this.defaultValue = defaultValue;
         this.reset();
@@ -22,6 +28,7 @@ public class ConfigEntry<E> implements SerializableConfigEntry {
 
     public void reset() {
         this.value = this.defaultValue;
+        changeListeners.forEach(listener -> listener.accept(value));
     }
 
     public boolean isDefault() {
@@ -29,16 +36,15 @@ public class ConfigEntry<E> implements SerializableConfigEntry {
     }
 
     public void set(E value) {
-        if (!this.value.equals(value)) changeListeners.forEach(listener -> listener.accept(value));
-        this.value = value;
+        if (!this.value.equals(value)) {
+            this.value = value;
+            changeListeners.forEach(listener -> listener.accept(value));
+        }
     }
 
     public void setDefault(E value) {
         this.defaultValue = value;
-        if (this.value == null) {
-            this.value = value;
-            changeListeners.forEach(listener -> listener.accept(value));
-        }
+        if (this.value == null) reset();
     }
 
     public E getDefault() {
