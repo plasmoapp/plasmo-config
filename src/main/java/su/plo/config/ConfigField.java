@@ -11,5 +11,6 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 public @interface ConfigField {
     String path() default "";
     String comment() default "";
+    String nullComment() default "";
     boolean ignoreDefault() default false;
 }

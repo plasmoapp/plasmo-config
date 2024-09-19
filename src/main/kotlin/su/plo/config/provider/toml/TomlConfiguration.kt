@@ -22,7 +22,6 @@ import java.util.*
 import java.util.function.Function
 import java.util.function.Predicate
 
-
 class TomlConfiguration : ConfigurationProvider() {
 
     @Throws(IOException::class)
@@ -210,7 +209,21 @@ class TomlConfiguration : ConfigurationProvider() {
 
                 field.isAccessible = true
 
-                var fieldValue = field.get(configuration) ?: return@forEach
+                var fieldValue = field.get(configuration) ?: run {
+                    if (configField.nullComment.isNotEmpty()) {
+                        if (field.type.isAnnotationPresent(Config::class.java) ||
+                            Map::class.java.isAssignableFrom(field.type)
+                        ) {
+                            writer.newLine()
+                        }
+
+                        if (configField.comment.isNotEmpty())
+                            writeComment(writer, prefix, configField.comment)
+                        writeComment(writer, prefix, configField.nullComment)
+                    }
+
+                    return@forEach
+                }
 
                 // ignore default ConfigEntry
                 if (fieldValue is ConfigEntry<*> &&
@@ -239,7 +252,13 @@ class TomlConfiguration : ConfigurationProvider() {
                 }
 
                 if (fieldValue is Map<*, *>) {
-                    writeMap(writer, prefix, parent, configPath, fieldValue as Map<String, Any>)
+                    if (configField.nullComment.isNotEmpty() && fieldValue.isEmpty()) {
+                        if (configField.comment.isNotEmpty())
+                            writeComment(writer, prefix, configField.comment)
+                        writeComment(writer, prefix, configField.nullComment)
+                    } else {
+                        writeMap(writer, prefix, parent, configPath, fieldValue as Map<String, Any>)
+                    }
                     return@forEach
                 }
 
@@ -278,8 +297,6 @@ class TomlConfiguration : ConfigurationProvider() {
     @Throws(IOException::class)
     private fun writeComment(writer: BufferedWriter, prefix: String, comment: String) {
         for (line in comment.trimIndent().split("\n")) {
-            if (line.isBlank()) continue
-
             writer.write("$prefix# $line\n")
         }
     }
@@ -304,14 +321,13 @@ class TomlConfiguration : ConfigurationProvider() {
 
         field.isAccessible = true
 
-        var fieldValue = field.get(configuration)
+        var fieldValue: Any? = field.get(configuration)
         val fieldType = field.type
-        var configValue = map[configPath] ?: run {
-            if (!fieldType.isAnnotationPresent(Config::class.java)) return
+        var configValue = map[configPath]!!
 
+        if (fieldValue == null && fieldType.isAnnotationPresent(Config::class.java)) {
             fieldValue = fieldType.getConstructor().newInstance()
             field.set(configuration, fieldValue)
-            fieldValue
         }
 
         // validator with @ConfigValidator
@@ -330,7 +346,7 @@ class TomlConfiguration : ConfigurationProvider() {
         }
 
         // load nested map
-        if (fieldValue.javaClass.isAnnotationPresent(Config::class.java)) {
+        if (fieldValue != null && fieldValue.javaClass.isAnnotationPresent(Config::class.java)) {
             deserializeFromMap(
                 fieldValue.javaClass,
                 fieldValue,
@@ -341,7 +357,7 @@ class TomlConfiguration : ConfigurationProvider() {
 
         // load SerializableConfigEntry
         if (fieldValue is SerializableConfigEntry) {
-            val configEntry = fieldValue as SerializableConfigEntry
+            val configEntry = fieldValue
             configEntry.deserialize(configValue)
             return
         }
@@ -385,12 +401,12 @@ class TomlConfiguration : ConfigurationProvider() {
     }
 
     private fun convertPrimitives(targetClass: Class<*>, targetObject: Any): Any? {
-        return when(targetClass) {
+        return when (targetClass) {
             Int::class.javaPrimitiveType,
             Int::class.javaObjectType -> (targetObject as Long).toInt()
 
             Short::class.javaPrimitiveType,
-            Short::class.javaObjectType -> (targetObject as Long).toInt()
+            Short::class.javaObjectType -> (targetObject as Long).toShort()
 
             Long::class.javaPrimitiveType,
             Long::class.javaObjectType -> (targetObject as Long).toLong()
@@ -432,7 +448,7 @@ class TomlConfiguration : ConfigurationProvider() {
     }
 
     @Throws(Exception::class)
-    private fun applyProcessors(fieldProcessor: ConfigFieldProcessor, value: Any): Any? {
+    private fun applyProcessors(fieldProcessor: ConfigFieldProcessor, value: Any): Any {
         var processedValue = value
         for (classProcessor in fieldProcessor.value) {
             val processor = classProcessor.java.getConstructor().newInstance() as Function<Any, Any>

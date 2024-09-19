@@ -48,8 +48,9 @@ publishing {
 
     repositories {
         maven {
-            name = "plasmo-repo"
-            url = uri("https://repo.plo.su/public/")
+            name = "plasmoverseReleases"
+            url = uri("https://repo.plasmoverse.com/releases")
+            credentials(PasswordCredentials::class)
         }
     }
 }
