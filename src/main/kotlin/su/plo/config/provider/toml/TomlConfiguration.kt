@@ -270,11 +270,17 @@ class TomlConfiguration : ConfigurationProvider() {
 
     @Throws(IOException::class)
     private fun writeMap(writer: BufferedWriter, prefix: String, parent: String, key: String, map: Map<String, Any>) {
-        if (!map.values.stream().allMatch { value -> value is Map<*, *> }) {
+        if (map.values.none { it is Map<*, *> || it.javaClass.isAnnotationPresent(Config::class.java) }) {
             writer.write(String.format("%s[%s%s]\n", prefix, parent, key))
         }
 
         map.forEach { (mapKey, mapValue) ->
+            if (mapValue.javaClass.isAnnotationPresent(Config::class.java)) {
+                writer.write("$prefix[$parent$key.$mapKey]\n")
+                serializeClassToWriter(writer, mapValue.javaClass, mapValue, "$parent$key.", prefix)
+                return@forEach
+            }
+
             if (mapValue is Map<*, *>) {
                 writeMap(writer, prefix, "$parent$key.", mapKey, mapValue as Map<String, Any>)
                 return@forEach
@@ -381,18 +387,29 @@ class TomlConfiguration : ConfigurationProvider() {
         if (Map::class.java.isAssignableFrom(fieldType) &&
             fieldValue != null
         ) {
-
-            val fieldMap = fieldValue as MutableMap<Any, Any>
+            val newMap = LinkedHashMap<Any, Any>()
             val configMap = configValue as Map<Any, Any>
 
             val pt = field.genericType as ParameterizedType
             val mapValueType = pt.actualTypeArguments.getOrNull(1) as? Class<*>
 
-
-            configMap.forEach { (key, value) ->
-                fieldMap[key] = convertPrimitives(mapValueType ?: value.javaClass, value) ?: value
+            if (mapValueType != null && mapValueType.isAnnotationPresent(Config::class.java)) {
+                configMap.forEach { (key, value) ->
+                    val deserializedValue = mapValueType.getConstructor().newInstance()
+                    deserializeFromMap(
+                        mapValueType,
+                        deserializedValue,
+                        value as Map<String, Any>
+                    )
+                    newMap[key] = deserializedValue
+                }
+            } else {
+                configMap.forEach { (key, value) ->
+                    newMap[key] = convertPrimitives(mapValueType ?: value.javaClass, value) ?: value
+                }
             }
 
+            field.set(configuration, newMap)
             return
         }
 
