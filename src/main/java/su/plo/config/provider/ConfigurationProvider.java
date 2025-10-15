@@ -2,7 +2,6 @@ package su.plo.config.provider;
 
 import org.jetbrains.annotations.NotNull;
 import su.plo.config.Config;
-import su.plo.config.provider.toml.TomlConfiguration;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -11,22 +10,19 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ServiceLoader;
+import java.util.stream.StreamSupport;
 
 public abstract class ConfigurationProvider {
-    private static final Map<Class<? extends ConfigurationProvider>, ConfigurationProvider> providers = new HashMap<>();
-
-    static {
-        try {
-            providers.put(TomlConfiguration.class, new TomlConfiguration());
-        } catch (NoClassDefFoundError ignored) {
-        }
-    }
 
     @SuppressWarnings("unchecked")
-    public static <T> T getProvider(Class<? extends ConfigurationProvider> provider) {
-        return (T) providers.get(provider);
+    public static <T> T getProvider(@NotNull Class<? extends ConfigurationProvider> providerClass) {
+        ServiceLoader<ConfigurationProvider> loader = ServiceLoader.load(ConfigurationProvider.class);
+
+        return (T) StreamSupport.stream(loader.spliterator(), false)
+                .filter(providerClass::isInstance)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Provider not found: " + providerClass));
     }
 
     @SuppressWarnings("unchecked")
