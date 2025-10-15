@@ -1,14 +1,16 @@
 package su.plo.config.provider;
 
+import org.jetbrains.annotations.NotNull;
 import su.plo.config.Config;
 import su.plo.config.provider.toml.TomlConfiguration;
 
-import javax.annotation.Nonnull;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -22,11 +24,13 @@ public abstract class ConfigurationProvider {
         }
     }
 
+    @SuppressWarnings("unchecked")
     public static <T> T getProvider(Class<? extends ConfigurationProvider> provider) {
         return (T) providers.get(provider);
     }
 
-    public <T> T load(Class<?> clazz, @Nonnull File file, boolean saveDefault) throws IOException {
+    @SuppressWarnings("unchecked")
+    public <T> T load(@NotNull Class<?> clazz, @NotNull File file, boolean saveDefault) throws IOException {
         if (!clazz.isAnnotationPresent(Config.class)) {
             throw new IllegalArgumentException("Class not annotated with @Config");
         }
@@ -51,19 +55,22 @@ public abstract class ConfigurationProvider {
         return (T) config;
     }
 
-    public <T> T load(Class<?> clazz, @Nonnull File file, @Nonnull Object defaultConfiguration) throws IOException {
+    @SuppressWarnings("unchecked")
+    public <T> T load(Class<?> clazz, @NotNull File file, @NotNull Object defaultConfiguration) throws IOException {
         try (FileInputStream is = new FileInputStream(file)) {
             return (T) load(clazz, is, defaultConfiguration);
         }
     }
 
-    public <T> T load(Class<?> clazz, @Nonnull File file, @Nonnull InputStream defaultConfiguration) throws IOException {
+    @SuppressWarnings("unchecked")
+    public <T> T load(@NotNull Class<?> clazz, @NotNull File file, @NotNull InputStream defaultConfiguration) throws IOException {
         try (FileInputStream is = new FileInputStream(file)) {
             return (T) load(clazz, is, defaultConfiguration);
         }
     }
 
-    public <T> T load(Class<?> clazz, @Nonnull InputStream is) throws IOException {
+    @SuppressWarnings("unchecked")
+    public <T> T load(@NotNull Class<?> clazz, @NotNull InputStream is) throws IOException {
         try {
             return (T) load(clazz, is, clazz.getConstructor().newInstance());
         } catch (InstantiationException | IllegalAccessException | InvocationTargetException |
@@ -72,7 +79,8 @@ public abstract class ConfigurationProvider {
         }
     }
 
-    public <T> T load(Class<?> clazz, @Nonnull File file) throws IOException {
+    @SuppressWarnings("unchecked")
+    public <T> T load(@NotNull Class<?> clazz, @NotNull File file) throws IOException {
         try (FileInputStream is = new FileInputStream(file)) {
             return (T) load(clazz, is, clazz.getConstructor().newInstance());
         } catch (InstantiationException | IllegalAccessException | InvocationTargetException |
@@ -81,13 +89,27 @@ public abstract class ConfigurationProvider {
         }
     }
 
-    protected abstract Object load(Class<?> configClass, @Nonnull InputStream is, @Nonnull Object defaultConfiguration) throws IOException;
+    public void save(@NotNull Class<?> targetClass, @NotNull Object configuration, @NotNull File file) throws IOException {
+        if (!targetClass.isAnnotationPresent(Config.class)) {
+            throw new IllegalArgumentException("Class not annotated with @Config");
+        }
 
-    protected abstract Object load(Class<?> configClass, @Nonnull InputStream is, @Nonnull InputStream defaultConfiguration) throws IOException;
+        if (file.getParentFile() != null && !file.getParentFile().exists()) {
+            file.getParentFile().mkdirs();
+        }
 
-    public abstract Object serialize(Object object);
+        try (OutputStream outputStream = Files.newOutputStream(file.toPath())) {
+            save(targetClass, configuration, outputStream);
+        }
+    }
 
-    public abstract void deserialize(Object targetObject, Object map);
+    protected abstract Object load(@NotNull Class<?> configClass, @NotNull InputStream is, @NotNull Object defaultConfiguration) throws IOException;
 
-    public abstract void save(Class<?> targetClass, @Nonnull Object configuration, @Nonnull File file) throws IOException;
+    protected abstract Object load(@NotNull Class<?> configClass, @NotNull InputStream is, @NotNull InputStream defaultConfiguration) throws IOException;
+
+    public abstract Object serialize(@NotNull Object object);
+
+    public abstract void deserialize(@NotNull Object targetObject, @NotNull Object map);
+
+    public abstract void save(@NotNull Class<?> targetClass, @NotNull Object configuration, @NotNull OutputStream outputStream) throws IOException;
 }

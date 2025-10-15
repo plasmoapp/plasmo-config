@@ -12,13 +12,15 @@ import su.plo.config.ConfigValidator
 import su.plo.config.entry.ConfigEntry
 import su.plo.config.entry.SerializableConfigEntry
 import su.plo.config.provider.ConfigurationProvider
-import java.io.*
+import java.io.BufferedWriter
+import java.io.IOException
+import java.io.InputStream
+import java.io.InputStreamReader
+import java.io.OutputStream
+import java.io.OutputStreamWriter
 import java.lang.reflect.Field
 import java.lang.reflect.ParameterizedType
 import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.Paths
-import java.util.*
 import java.util.function.Function
 import java.util.function.Predicate
 
@@ -58,16 +60,12 @@ class TomlConfiguration : ConfigurationProvider() {
     }
 
     @Throws(IOException::class)
-    override fun save(targetClass: Class<*>, configuration: Any, file: File) {
+    override fun save(targetClass: Class<*>, configuration: Any, outputStream: OutputStream) {
         require(targetClass.isAnnotationPresent(Config::class.java)) { "Class not annotated with @Config" }
-
-        if (file.parentFile != null && !file.parentFile.exists()) {
-            file.parentFile.mkdirs()
-        }
 
         BufferedWriter(
             OutputStreamWriter(
-                Files.newOutputStream(Paths.get(file.absolutePath)),
+                outputStream,
                 StandardCharsets.UTF_8
             )
         ).use { writer ->
@@ -137,7 +135,7 @@ class TomlConfiguration : ConfigurationProvider() {
                 }
 
                 if (value is ConfigEntry<*> && defaultValue is ConfigEntry<*>) {
-                    value.default = defaultValue.default
+                    value.default = defaultValue.default as Nothing?
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
