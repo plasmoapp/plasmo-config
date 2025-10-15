@@ -218,7 +218,7 @@ class TomlConfiguration : ConfigurationProvider() {
 
                         if (configField.comment.isNotEmpty())
                             writeComment(writer, prefix, configField.comment)
-                        writeComment(writer, prefix, configField.nullComment)
+                        writeComment(writer, prefix, configField.nullComment, false)
                     }
 
                     return@forEach
@@ -254,7 +254,7 @@ class TomlConfiguration : ConfigurationProvider() {
                     if (configField.nullComment.isNotEmpty() && fieldValue.isEmpty()) {
                         if (configField.comment.isNotEmpty())
                             writeComment(writer, prefix, configField.comment)
-                        writeComment(writer, prefix, configField.nullComment)
+                        writeComment(writer, prefix, configField.nullComment, false)
                     } else {
                         writeMap(writer, prefix, parent, configPath, fieldValue as Map<String, Any>)
                     }
@@ -300,9 +300,11 @@ class TomlConfiguration : ConfigurationProvider() {
     }
 
     @Throws(IOException::class)
-    private fun writeComment(writer: BufferedWriter, prefix: String, comment: String) {
+    private fun writeComment(writer: BufferedWriter, prefix: String, comment: String, spaceBetween: Boolean = true) {
+        val space = if (spaceBetween) " " else ""
+
         for (line in comment.trimIndent().split("\n")) {
-            writer.write("$prefix# $line\n")
+            writer.write("$prefix#$space$line\n")
         }
     }
 
