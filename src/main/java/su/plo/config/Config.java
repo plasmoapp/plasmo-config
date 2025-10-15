@@ -10,4 +10,9 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 @Target(value = TYPE)
 public @interface Config {
     String comment() default "";
+
+    /**
+     * If set to true, fields without @ConfigField annotation will not be serialized.
+     */
+    boolean loadConfigFieldOnly() default false;
 }

@@ -28,6 +28,9 @@ class TomlConfiguration : ConfigurationProvider() {
 
     @Throws(IOException::class)
     override fun load(configClass: Class<*>, inputStream: InputStream, defaultConfiguration: Any): Any {
+        require(configClass.isAnnotationPresent(Config::class.java)) { "Class not annotated with @Config" }
+        val configAnnotation = configClass.getAnnotation(Config::class.java)
+
         val toml = Toml().read(InputStreamReader(inputStream, Charsets.UTF_8))
 
         val configuration = try {
@@ -36,7 +39,7 @@ class TomlConfiguration : ConfigurationProvider() {
             throw IllegalArgumentException("Failed to initialize configuration class", e)
         }
 
-        deserializeFromMap(configClass, configuration, toml.toMap())
+        deserializeFromMap(configClass, configuration, toml.toMap(), configAnnotation)
         loadDefaults(configClass, configuration, defaultConfiguration)
 
         return configuration
@@ -44,6 +47,9 @@ class TomlConfiguration : ConfigurationProvider() {
 
     @Throws(IOException::class)
     override fun load(configClass: Class<*>, inputStream: InputStream, defaultConfiguration: InputStream): Any {
+        require(configClass.isAnnotationPresent(Config::class.java)) { "Class not annotated with @Config" }
+        val configAnnotation = configClass.getAnnotation(Config::class.java)
+
         val toml = Toml().read(InputStreamReader(inputStream, Charsets.UTF_8))
         val tomlDefaults = Toml().read(InputStreamReader(defaultConfiguration, Charsets.UTF_8))
         val mergedMap = loadDefaults(toml.toMap(), tomlDefaults.toMap())
@@ -54,7 +60,7 @@ class TomlConfiguration : ConfigurationProvider() {
             throw IllegalArgumentException("Failed to initialize configuration class", e)
         }
 
-        deserializeFromMap(configClass, configuration, mergedMap)
+        deserializeFromMap(configClass, configuration, mergedMap, configAnnotation)
 
         return configuration
     }
@@ -94,8 +100,10 @@ class TomlConfiguration : ConfigurationProvider() {
         val targetClass = targetObject.javaClass
         require(targetClass.isAnnotationPresent(Config::class.java)) { "Class not annotated with @Config" }
 
+        val configAnnotation = targetClass.getAnnotation(Config::class.java)
+
         val map: Map<String, Any> = serialized as Map<String, Any>
-        deserializeFromMap(targetClass, targetObject, map)
+        deserializeFromMap(targetClass, targetObject, map, configAnnotation)
     }
 
     private fun loadDefaults(map: MutableMap<String, Any>, defaults: Map<String, Any>): MutableMap<String, Any> {
@@ -150,13 +158,16 @@ class TomlConfiguration : ConfigurationProvider() {
         val targetClass: Class<*> = targetObject.javaClass
         require(targetClass.isAnnotationPresent(Config::class.java)) { "Class not annotated with @Config" }
 
+        val configAnnotation = targetClass.getAnnotation(Config::class.java)
+
         val serialized: MutableMap<String, Any> = Maps.newHashMap()
 
         getFields(targetClass).forEach { field ->
             try {
-                if (!field.isAnnotationPresent(ConfigField::class.java)) return@forEach
+                if (configAnnotation.loadConfigFieldOnly && !field.isAnnotationPresent(ConfigField::class.java))
+                    return@forEach
 
-                val configField = field.getAnnotation(ConfigField::class.java)
+                val configField = field.getAnnotationOr { ConfigField() }
                 val configPath = getConfigPath(field, configField)
 
                 field.isAccessible = true
@@ -201,9 +212,10 @@ class TomlConfiguration : ConfigurationProvider() {
 
         getFields(configClass).forEach { field ->
             try {
-                if (!field.isAnnotationPresent(ConfigField::class.java)) return@forEach
+                if (configAnnotation.loadConfigFieldOnly && !field.isAnnotationPresent(ConfigField::class.java))
+                    return@forEach
 
-                val configField = field.getAnnotation(ConfigField::class.java)
+                val configField = field.getAnnotationOr { ConfigField() }
                 val configPath = getConfigPath(field, configField)
 
                 field.isAccessible = true
@@ -308,20 +320,20 @@ class TomlConfiguration : ConfigurationProvider() {
         }
     }
 
-    private fun deserializeFromMap(configClass: Class<*>, configuration: Any, map: Map<String, Any>) {
+    private fun deserializeFromMap(configClass: Class<*>, configuration: Any, map: Map<String, Any>, configAnnotation: Config) {
         getFields(configClass).forEach {
             try {
-                deserializeField(it, map, configuration)
+                deserializeField(it, map, configuration, configAnnotation)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
     }
 
-    private fun deserializeField(field: Field, map: Map<String, Any>, configuration: Any) {
-        if (!field.isAnnotationPresent(ConfigField::class.java)) return
+    private fun deserializeField(field: Field, map: Map<String, Any>, configuration: Any, configAnnotation: Config) {
+        if (configAnnotation.loadConfigFieldOnly && !field.isAnnotationPresent(ConfigField::class.java)) return
 
-        val configField = field.getAnnotation(ConfigField::class.java)
+        val configField = field.getAnnotationOr { ConfigField() }
         val configPath = getConfigPath(field, configField)
 
         if (!map.containsKey(configPath)) return
@@ -357,7 +369,8 @@ class TomlConfiguration : ConfigurationProvider() {
             deserializeFromMap(
                 fieldValue.javaClass,
                 fieldValue,
-                map[configPath] as Map<String, Any>
+                map[configPath] as Map<String, Any>,
+                fieldValue.javaClass.getAnnotation(Config::class.java),
             )
             return
         }
@@ -401,7 +414,8 @@ class TomlConfiguration : ConfigurationProvider() {
                     deserializeFromMap(
                         mapValueType,
                         deserializedValue,
-                        value as Map<String, Any>
+                        value as Map<String, Any>,
+                        mapValueType.getAnnotation(Config::class.java),
                     )
                     newMap[key] = deserializedValue
                 }
@@ -473,5 +487,11 @@ class TomlConfiguration : ConfigurationProvider() {
             processedValue = processor.apply(value)
         }
         return processedValue
+    }
+
+    private inline fun <reified T : Annotation> Field.getAnnotationOr(orValue: () -> T): T {
+        if (!isAnnotationPresent(T::class.java)) return orValue()
+
+        return getAnnotation(T::class.java)
     }
 }
