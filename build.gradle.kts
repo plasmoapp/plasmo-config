@@ -1,13 +1,9 @@
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-
 val mavenGroup: String by rootProject
 val packageVersion: String by rootProject
 
 plugins {
-    java
-    id("com.github.johnrengelman.shadow") version("7.0.0")
-    id("net.linguica.maven-settings") version("0.5")
-    kotlin("jvm") version "1.6.10"
+    kotlin("jvm") version "2.0.21"
+    id("com.gradleup.shadow") version("9.2.2")
     `maven-publish`
 }
 
@@ -17,21 +13,17 @@ version = packageVersion
 dependencies {
     implementation(kotlin("stdlib-jdk8"))
     implementation("com.google.code.findbugs:jsr305:3.0.2")
-    implementation("com.google.guava:guava:31.0.1-jre")
+    implementation("com.google.guava:guava:33.5.0-jre")
 
     implementation("com.moandjiezana.toml:toml4j:0.7.2")
     shadow("com.moandjiezana.toml:toml4j:0.7.2") {
         isTransitive = false
     }
 
-    testImplementation("org.junit.jupiter:junit-jupiter-api:5.6.0")
-    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
+    implementation("org.projectlombok:lombok:1.18.42")
+    annotationProcessor("org.projectlombok:lombok:1.18.42")
 
-    // Lombok
-    implementation("org.projectlombok:lombok:1.18.20")
-    annotationProcessor("org.projectlombok:lombok:1.18.20")
-    testImplementation("org.projectlombok:lombok:1.18.20")
-    testAnnotationProcessor("org.projectlombok:lombok:1.18.20")
+    testImplementation(kotlin("test"))
 }
 
 repositories {
@@ -56,12 +48,12 @@ publishing {
 }
 
 tasks {
-    getByName<Test>("test") {
+    test {
         useJUnitPlatform()
     }
 
     shadowJar {
-        configurations = listOf(project.configurations.getByName("shadow"))
+        configurations = listOf(project.configurations.shadow.get())
         archiveBaseName.set("config")
         archiveClassifier.set("")
 
@@ -69,7 +61,7 @@ tasks {
     }
 
     build {
-        dependsOn(getByName<ShadowJar>("shadowJar"))
+        dependsOn(shadowJar)
     }
 
     java { toolchain.languageVersion.set(JavaLanguageVersion.of("8")) }
