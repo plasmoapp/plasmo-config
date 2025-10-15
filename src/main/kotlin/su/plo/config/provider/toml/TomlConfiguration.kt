@@ -60,7 +60,8 @@ class TomlConfiguration : ConfigurationProvider() {
     }
 
     @Throws(IOException::class)
-    override fun save(targetClass: Class<*>, configuration: Any, outputStream: OutputStream) {
+    override fun <T> save(configuration: T, outputStream: OutputStream) {
+        val targetClass = configuration!!::class.java
         require(targetClass.isAnnotationPresent(Config::class.java)) { "Class not annotated with @Config" }
 
         BufferedWriter(

@@ -25,13 +25,12 @@ public abstract class ConfigurationProvider {
                 .orElseThrow(() -> new IllegalStateException("Provider not found: " + providerClass));
     }
 
-    @SuppressWarnings("unchecked")
-    public <T> T load(@NotNull Class<?> clazz, @NotNull File file, boolean saveDefault) throws IOException {
+    public <T> T load(@NotNull Class<T> clazz, @NotNull File file, boolean saveDefault) throws IOException {
         if (!clazz.isAnnotationPresent(Config.class)) {
             throw new IllegalArgumentException("Class not annotated with @Config");
         }
 
-        Object config = null;
+        T config = null;
         if (file.exists()) {
             config = load(clazz, file);
         }
@@ -44,11 +43,11 @@ public abstract class ConfigurationProvider {
             }
 
             if (saveDefault) {
-                save(clazz, config, file);
+                save(config, file);
             }
         }
 
-        return (T) config;
+        return config;
     }
 
     @SuppressWarnings("unchecked")
@@ -85,7 +84,16 @@ public abstract class ConfigurationProvider {
         }
     }
 
-    public void save(@NotNull Class<?> targetClass, @NotNull Object configuration, @NotNull File file) throws IOException {
+    /**
+     * @deprecated use {@link #save(Object, File)}
+     */
+    @Deprecated
+    public <T> void save(@NotNull Class<T> targetClass, @NotNull T configuration, @NotNull File file) throws IOException {
+        save(configuration, file);
+    }
+
+    public <T> void save(@NotNull T configuration, @NotNull File file) throws IOException {
+        Class<?> targetClass = configuration.getClass();
         if (!targetClass.isAnnotationPresent(Config.class)) {
             throw new IllegalArgumentException("Class not annotated with @Config");
         }
@@ -95,7 +103,7 @@ public abstract class ConfigurationProvider {
         }
 
         try (OutputStream outputStream = Files.newOutputStream(file.toPath())) {
-            save(targetClass, configuration, outputStream);
+            save(configuration, outputStream);
         }
     }
 
@@ -107,5 +115,13 @@ public abstract class ConfigurationProvider {
 
     public abstract void deserialize(@NotNull Object targetObject, @NotNull Object map);
 
-    public abstract void save(@NotNull Class<?> targetClass, @NotNull Object configuration, @NotNull OutputStream outputStream) throws IOException;
+    /**
+     * @deprecated use {@link #save(Object, OutputStream)}
+     */
+    @Deprecated
+    public <T> void save(@NotNull Class<T> targetClass, @NotNull T configuration, @NotNull OutputStream outputStream) throws IOException {
+        save(configuration, outputStream);
+    }
+
+    public abstract <T> void save(@NotNull T configuration, @NotNull OutputStream outputStream) throws IOException;
 }
