@@ -15,9 +15,16 @@ import java.util.stream.StreamSupport;
 
 public abstract class ConfigurationProvider {
 
-    @SuppressWarnings("unchecked")
     public static <T> T getProvider(@NotNull Class<? extends ConfigurationProvider> providerClass) {
-        ServiceLoader<ConfigurationProvider> loader = ServiceLoader.load(ConfigurationProvider.class);
+        return getProvider(providerClass, providerClass.getClassLoader());
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> T getProvider(
+            @NotNull Class<? extends ConfigurationProvider> providerClass,
+            @NotNull ClassLoader classLoader
+    ) {
+        ServiceLoader<ConfigurationProvider> loader = ServiceLoader.load(ConfigurationProvider.class, classLoader);
 
         return (T) StreamSupport.stream(loader.spliterator(), false)
                 .filter(providerClass::isInstance)
