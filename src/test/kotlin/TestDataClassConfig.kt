@@ -28,7 +28,9 @@ class TestDataClassConfig {
     }
 }
 
-@Config
+@Config(
+    loadConfigFieldOnly = false,
+)
 data class DataClassConfig(
     val string: String = "String",
 )

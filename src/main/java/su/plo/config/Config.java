@@ -14,5 +14,5 @@ public @interface Config {
     /**
      * If set to true, fields without @ConfigField annotation will not be serialized.
      */
-    boolean loadConfigFieldOnly() default false;
+    boolean loadConfigFieldOnly() default true;
 }
