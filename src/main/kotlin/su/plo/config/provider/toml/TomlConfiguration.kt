@@ -126,28 +126,24 @@ class TomlConfiguration : ConfigurationProvider() {
 
     private fun loadDefaults(configClass: Class<*>, configuration: Any, defaultConfiguration: Any) {
         getFields(configClass).forEach { field ->
-            try {
-                if (!field.isAnnotationPresent(ConfigField::class.java)) return@forEach
+            if (!field.isAnnotationPresent(ConfigField::class.java)) return@forEach
 
-                field.isAccessible = true
+            field.isAccessible = true
 
-                val fieldType = field.type
+            val fieldType = field.type
 
-                val value = field.get(configuration)
-                val defaultValue = field.get(defaultConfiguration)
+            val value = field.get(configuration)
+            val defaultValue = field.get(defaultConfiguration)
 
-                if (value == null || defaultValue == null) return@forEach
+            if (value == null || defaultValue == null) return@forEach
 
-                if (fieldType.isAnnotationPresent(Config::class.java)) {
-                    loadDefaults(fieldType, value, defaultValue)
-                    return@forEach
-                }
+            if (fieldType.isAnnotationPresent(Config::class.java)) {
+                loadDefaults(fieldType, value, defaultValue)
+                return@forEach
+            }
 
-                if (value is ConfigEntry<*> && defaultValue is ConfigEntry<*>) {
-                    value.default = defaultValue.default as Nothing?
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
+            if (value is ConfigEntry<*> && defaultValue is ConfigEntry<*>) {
+                value.default = defaultValue.default as Nothing?
             }
         }
     }
@@ -322,11 +318,7 @@ class TomlConfiguration : ConfigurationProvider() {
 
     private fun deserializeFromMap(configClass: Class<*>, configuration: Any, map: Map<String, Any>, configAnnotation: Config) {
         getFields(configClass).forEach {
-            try {
-                deserializeField(it, map, configuration, configAnnotation)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            deserializeField(it, map, configuration, configAnnotation)
         }
     }
 
@@ -392,7 +384,7 @@ class TomlConfiguration : ConfigurationProvider() {
 
             try {
                 field.set(configuration, java.lang.Enum.valueOf(enumClass, configValue as String))
-            } catch (ignored: java.lang.Exception) {
+            } catch (_: Exception) {
                 field.set(configuration, enumClass.enumConstants[0])
             }
 
