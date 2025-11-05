@@ -144,7 +144,8 @@ class TomlConfiguration : ConfigurationProvider() {
             }
 
             if (value is ConfigEntry<*> && defaultValue is ConfigEntry<*>) {
-                value.default = defaultValue.default as Nothing?
+                @Suppress("UNCHECKED_CAST")
+                (value as ConfigEntry<Any?>).setDefault(defaultValue.default)
             }
         }
     }
@@ -331,10 +332,10 @@ class TomlConfiguration : ConfigurationProvider() {
             if (fieldValue is SerializableConfigEntry) {
                 val configField = field.getAnnotationOr { ConfigField() }
                 val configPath = getConfigPath(field, configField)
-                var configValue = map[configPath]!!
+                map[configPath]?.let { configValue ->
+                    fieldValue.deserialize(configValue)
+                }
 
-                val configEntry = fieldValue
-                configEntry.deserialize(configValue)
                 return@forEach
             }
 
