@@ -1,7 +1,6 @@
 package su.plo.config.provider.toml
 
 import com.google.common.base.CaseFormat
-import com.google.common.base.Charsets
 import com.google.common.collect.Maps
 import com.moandjiezana.toml.Toml
 import com.moandjiezana.toml.TomlWriter
