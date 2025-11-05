@@ -32,7 +32,7 @@ class TomlConfiguration : ConfigurationProvider() {
         require(configClass.isAnnotationPresent(Config::class.java)) { "Class not annotated with @Config" }
         val configAnnotation = configClass.getAnnotation(Config::class.java)
 
-        val toml = Toml().read(InputStreamReader(inputStream, Charsets.UTF_8))
+        val toml = Toml().read(InputStreamReader(inputStream, StandardCharsets.UTF_8))
 
         val configuration = try {
             configClass.getConstructor().newInstance()
@@ -51,8 +51,8 @@ class TomlConfiguration : ConfigurationProvider() {
         require(configClass.isAnnotationPresent(Config::class.java)) { "Class not annotated with @Config" }
         val configAnnotation = configClass.getAnnotation(Config::class.java)
 
-        val toml = Toml().read(InputStreamReader(inputStream, Charsets.UTF_8))
-        val tomlDefaults = Toml().read(InputStreamReader(defaultConfiguration, Charsets.UTF_8))
+        val toml = Toml().read(InputStreamReader(inputStream, StandardCharsets.UTF_8))
+        val tomlDefaults = Toml().read(InputStreamReader(defaultConfiguration, StandardCharsets.UTF_8))
         val mergedMap = loadDefaults(toml.toMap(), tomlDefaults.toMap())
 
         val configuration = try {
