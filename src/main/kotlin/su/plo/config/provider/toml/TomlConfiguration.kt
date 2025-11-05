@@ -403,7 +403,7 @@ class TomlConfiguration : ConfigurationProvider() {
             return try {
                 java.lang.Enum.valueOf(enumClass, configValue as String)
             } catch (_: Exception) {
-                enumClass.enumConstants[0]
+                throw IllegalArgumentException("Enum $configValue doesn't exists. Available values: ${enumClass.enumConstants.joinToString(", ")}")
             }
         }
 
