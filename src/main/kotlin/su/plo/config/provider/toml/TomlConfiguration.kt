@@ -1,3 +1,4 @@
+@file:Suppress("UNCHECKED_CAST")
 package su.plo.config.provider.toml
 
 import com.google.common.base.CaseFormat
@@ -12,11 +13,13 @@ import su.plo.config.entry.ConfigEntry
 import su.plo.config.entry.SerializableConfigEntry
 import su.plo.config.provider.ConfigurationProvider
 import java.io.BufferedWriter
+import java.io.CharArrayWriter
 import java.io.IOException
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.OutputStream
 import java.io.OutputStreamWriter
+import java.io.Writer
 import java.lang.reflect.Field
 import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Type
@@ -194,7 +197,7 @@ class TomlConfiguration : ConfigurationProvider() {
 
     @Throws(IOException::class)
     private fun serializeClassToWriter(
-        writer: BufferedWriter,
+        writer: Writer,
         configClass: Class<*>,
         configuration: Any,
         parent: String = "",
@@ -243,34 +246,50 @@ class TomlConfiguration : ConfigurationProvider() {
                     fieldValue = fieldValue.serialize()
                 }
 
+                val serializedValue = useCharWriter { writer ->
+                    if (configField.comment.isNotEmpty()) {
+                        writeComment(writer, prefix, configField.comment)
+                    }
+
+                    if (fieldValue.javaClass.isAnnotationPresent(Config::class.java)) {
+                        val serializedClassValue = useCharWriter { writer ->
+                            serializeClassToWriter(writer, fieldValue.javaClass, fieldValue, "$parent$configPath.", prefix)
+                        }
+
+                        if (serializedClassValue.isNotEmpty()) {
+                            writer.write(String.format("%s[%s%s]\n", prefix, parent, configPath))
+                            writer.write(serializedClassValue)
+                        }
+
+                        return@useCharWriter
+                    }
+
+                    if (fieldValue is Map<*, *>) {
+                        if (configField.nullComment.isNotEmpty() && fieldValue.isEmpty()) {
+                            if (configField.comment.isNotEmpty())
+                                writeComment(writer, prefix, configField.comment)
+                            writeComment(writer, prefix, configField.nullComment, false)
+                        } else {
+                            writeMap(writer, prefix, parent, configPath, fieldValue as Map<String, Any>)
+                        }
+                        return@useCharWriter
+                    }
+
+                    writeValue(writer, prefix, configPath, fieldValue)
+                }
+
+                if (serializedValue.isEmpty()) return@forEach
+
                 // # comment
                 // key: value
-                if (fieldValue.javaClass.isAnnotationPresent(Config::class.java) || fieldValue is Map<*, *>) {
+                if (
+                    fieldValue.javaClass.isAnnotationPresent(Config::class.java) ||
+                    fieldValue is Map<*, *> ||
+                    fieldValue.isListOfTables()
+                ) {
                     writer.newLine()
                 }
-
-                if (configField.comment.isNotEmpty()) {
-                    writeComment(writer, prefix, configField.comment)
-                }
-
-                if (fieldValue.javaClass.isAnnotationPresent(Config::class.java)) {
-                    writer.write(String.format("%s[%s%s]\n", prefix, parent, configPath))
-                    serializeClassToWriter(writer, fieldValue.javaClass, fieldValue, "$parent$configPath.", prefix)
-                    return@forEach
-                }
-
-                if (fieldValue is Map<*, *>) {
-                    if (configField.nullComment.isNotEmpty() && fieldValue.isEmpty()) {
-                        if (configField.comment.isNotEmpty())
-                            writeComment(writer, prefix, configField.comment)
-                        writeComment(writer, prefix, configField.nullComment, false)
-                    } else {
-                        writeMap(writer, prefix, parent, configPath, fieldValue as Map<String, Any>)
-                    }
-                    return@forEach
-                }
-
-                writeValue(writer, prefix, configPath, fieldValue)
+                writer.write(serializedValue)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -278,29 +297,50 @@ class TomlConfiguration : ConfigurationProvider() {
     }
 
     @Throws(IOException::class)
-    private fun writeMap(writer: BufferedWriter, prefix: String, parent: String, key: String, map: Map<String, Any>) {
+    private fun writeMap(writer: Writer, prefix: String, parent: String, key: String, map: Map<String, Any>) {
+        val serializedMap = useCharWriter { mapWriter ->
+            map.forEach { (mapKey, mapValue) ->
+                if (mapValue.javaClass.isAnnotationPresent(Config::class.java)) {
+                    val serializedString = useCharWriter {
+                        serializeClassToWriter(it, mapValue.javaClass, mapValue, "$parent$key.", prefix)
+                    }
+
+                    if (serializedString.isNotBlank()) {
+                        mapWriter.write("$prefix[$parent$key.$mapKey]\n")
+                        mapWriter.write(serializedString)
+                    }
+                    return@forEach
+                }
+
+                if (mapValue is Map<*, *>) {
+                    writeMap(mapWriter, prefix, "$parent$key.", mapKey, mapValue as Map<String, Any>)
+                    return@forEach
+                }
+
+                writeValue(mapWriter, prefix, mapKey, mapValue)
+            }
+        }
+
+        if (serializedMap.isBlank()) return
+
         if (map.values.none { it is Map<*, *> || it.javaClass.isAnnotationPresent(Config::class.java) }) {
             writer.write(String.format("%s[%s%s]\n", prefix, parent, key))
         }
+        writer.write(serializedMap)
+    }
 
-        map.forEach { (mapKey, mapValue) ->
-            if (mapValue.javaClass.isAnnotationPresent(Config::class.java)) {
-                writer.write("$prefix[$parent$key.$mapKey]\n")
-                serializeClassToWriter(writer, mapValue.javaClass, mapValue, "$parent$key.", prefix)
-                return@forEach
-            }
-
-            if (mapValue is Map<*, *>) {
-                writeMap(writer, prefix, "$parent$key.", mapKey, mapValue as Map<String, Any>)
-                return@forEach
-            }
-
-            writeValue(writer, prefix, mapKey, mapValue)
+    private fun useCharWriter(block: (Writer) -> Unit): String =
+        CharArrayWriter().use { writer ->
+            block(writer)
+            writer.toString()
         }
+
+    private fun Writer.newLine() {
+        write(System.lineSeparator())
     }
 
     @Throws(IOException::class)
-    private fun writeValue(writer: BufferedWriter, prefix: String, key: String, value: Any) {
+    private fun writeValue(writer: Writer, prefix: String, key: String, value: Any) {
         val data: MutableMap<String, Any> = LinkedHashMap()
         data[key] = value
 
@@ -309,7 +349,7 @@ class TomlConfiguration : ConfigurationProvider() {
     }
 
     @Throws(IOException::class)
-    private fun writeComment(writer: BufferedWriter, prefix: String, comment: String, spaceBetween: Boolean = true) {
+    private fun writeComment(writer: Writer, prefix: String, comment: String, spaceBetween: Boolean = true) {
         val space = if (spaceBetween) " " else ""
 
         for (line in comment.trimIndent().split("\n")) {
@@ -490,6 +530,13 @@ class TomlConfiguration : ConfigurationProvider() {
 
             else -> null
         }
+    }
+
+    fun Any.isListOfTables(): Boolean {
+        if (this !is List<*>) return false
+        val element = getOrNull(0) ?: return false
+
+        return element.javaClass.isAnnotationPresent(Config::class.java) || element is Map<*, *>
     }
 
     private fun getConfigPath(field: Field, configField: ConfigField) =
