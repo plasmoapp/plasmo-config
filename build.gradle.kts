@@ -31,23 +31,11 @@ repositories {
     mavenLocal()
 }
 
-publishing {
-    publications {
-        register("config", MavenPublication::class) {
-            artifact(tasks.shadowJar.get())
-        }
-    }
-
-    repositories {
-        maven {
-            name = "plasmoverseReleases"
-            url = uri("https://repo.plasmoverse.com/releases")
-            credentials(PasswordCredentials::class)
-        }
-    }
-}
-
 tasks {
+    java {
+        withSourcesJar()
+    }
+
     test {
         useJUnitPlatform()
     }
@@ -65,4 +53,21 @@ tasks {
     }
 
     java { toolchain.languageVersion.set(JavaLanguageVersion.of("8")) }
+}
+
+publishing {
+    publications {
+        register("config", MavenPublication::class) {
+            artifact(tasks.shadowJar.get())
+            artifact(tasks["sourcesJar"])
+        }
+    }
+
+    repositories {
+        maven {
+            name = "plasmoverseReleases"
+            url = uri("https://repo.plasmoverse.com/releases")
+            credentials(PasswordCredentials::class)
+        }
+    }
 }
