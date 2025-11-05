@@ -69,7 +69,7 @@ public class ConfigEntry<E> implements SerializableConfigEntry {
 
     public void deserialize(Object object) {
         try {
-            this.value = (E) object;
+            set((E) object);
         } catch (ClassCastException ignored) {
         }
     }
