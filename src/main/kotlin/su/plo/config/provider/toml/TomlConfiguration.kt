@@ -467,16 +467,16 @@ class TomlConfiguration : ConfigurationProvider() {
             Char::class.javaObjectType -> (targetObject as String)[0]
 
             Byte::class.javaPrimitiveType,
-            Byte::class.javaObjectType -> (targetObject as Long).toByte()
+            Byte::class.javaObjectType -> (targetObject as Number).toByte()
 
             Int::class.javaPrimitiveType,
-            Int::class.javaObjectType -> (targetObject as Long).toInt()
+            Int::class.javaObjectType -> (targetObject as Number).toInt()
 
             Short::class.javaPrimitiveType,
-            Short::class.javaObjectType -> (targetObject as Long).toShort()
+            Short::class.javaObjectType -> (targetObject as Number).toShort()
 
             Long::class.javaPrimitiveType,
-            Long::class.javaObjectType -> (targetObject as Long).toLong()
+            Long::class.javaObjectType -> (targetObject as Number).toLong()
 
             Double::class.javaPrimitiveType,
             Double::class.javaObjectType -> (targetObject as Double)
