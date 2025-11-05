@@ -463,6 +463,12 @@ class TomlConfiguration : ConfigurationProvider() {
 
     private fun convertPrimitives(targetClass: Class<*>, targetObject: Any): Any? {
         return when (targetClass) {
+            Char::class.javaPrimitiveType,
+            Char::class.javaObjectType -> (targetObject as String)[0]
+
+            Byte::class.javaPrimitiveType,
+            Byte::class.javaObjectType -> (targetObject as Long).toByte()
+
             Int::class.javaPrimitiveType,
             Int::class.javaObjectType -> (targetObject as Long).toInt()
 
