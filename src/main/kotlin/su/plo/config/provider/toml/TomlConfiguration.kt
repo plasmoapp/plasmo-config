@@ -20,6 +20,7 @@ import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.lang.reflect.Field
 import java.lang.reflect.ParameterizedType
+import java.lang.reflect.Type
 import java.nio.charset.StandardCharsets
 import java.util.function.Function
 import java.util.function.Predicate
@@ -39,7 +40,7 @@ class TomlConfiguration : ConfigurationProvider() {
             throw IllegalArgumentException("Failed to initialize configuration class", e)
         }
 
-        deserializeFromMap(configClass, configuration, toml.toMap(), configAnnotation)
+        fillFromMap(configClass, configuration, toml.toMap(), configAnnotation)
         loadDefaults(configClass, configuration, defaultConfiguration)
 
         return configuration
@@ -60,7 +61,7 @@ class TomlConfiguration : ConfigurationProvider() {
             throw IllegalArgumentException("Failed to initialize configuration class", e)
         }
 
-        deserializeFromMap(configClass, configuration, mergedMap, configAnnotation)
+        fillFromMap(configClass, configuration, mergedMap, configAnnotation)
 
         return configuration
     }
@@ -103,7 +104,7 @@ class TomlConfiguration : ConfigurationProvider() {
         val configAnnotation = targetClass.getAnnotation(Config::class.java)
 
         val map: Map<String, Any> = serialized as Map<String, Any>
-        deserializeFromMap(targetClass, targetObject, map, configAnnotation)
+        fillFromMap(targetClass, targetObject, map, configAnnotation)
     }
 
     private fun loadDefaults(map: MutableMap<String, Any>, defaults: Map<String, Any>): MutableMap<String, Any> {
@@ -316,30 +317,46 @@ class TomlConfiguration : ConfigurationProvider() {
         }
     }
 
-    private fun deserializeFromMap(configClass: Class<*>, configuration: Any, map: Map<String, Any>, configAnnotation: Config) {
-        getFields(configClass).forEach {
-            deserializeField(it, map, configuration, configAnnotation)
+    private fun fillFromMap(
+        configClass: Class<*>,
+        configuration: Any,
+        map: Map<String, Any>,
+        configAnnotation: Config,
+    ) {
+        getFields(configClass).forEach { field ->
+            field.isAccessible = true
+
+            // ConfigEntry is mutable, so we're populating it here instead of convertToFieldValue
+            val fieldValue = field.get(configuration)
+            if (fieldValue is SerializableConfigEntry) {
+                val configField = field.getAnnotationOr { ConfigField() }
+                val configPath = getConfigPath(field, configField)
+                var configValue = map[configPath]!!
+
+                val configEntry = fieldValue
+                configEntry.deserialize(configValue)
+                return@forEach
+            }
+
+            val value = convertToFieldValue(field, map, configAnnotation) ?: return@forEach
+            field.set(configuration, value)
         }
     }
 
-    private fun deserializeField(field: Field, map: Map<String, Any>, configuration: Any, configAnnotation: Config) {
-        if (configAnnotation.loadConfigFieldOnly && !field.isAnnotationPresent(ConfigField::class.java)) return
+    private fun convertToFieldValue(
+        field: Field,
+        map: Map<String, Any>,
+        configAnnotation: Config,
+    ): Any? {
+        if (configAnnotation.loadConfigFieldOnly && !field.isAnnotationPresent(ConfigField::class.java)) return null
 
         val configField = field.getAnnotationOr { ConfigField() }
         val configPath = getConfigPath(field, configField)
 
-        if (!map.containsKey(configPath)) return
+        if (!map.containsKey(configPath)) return null
 
-        field.isAccessible = true
-
-        var fieldValue: Any? = field.get(configuration)
         val fieldType = field.type
         var configValue = map[configPath]!!
-
-        if (fieldValue == null && fieldType.isAnnotationPresent(Config::class.java)) {
-            fieldValue = fieldType.getConstructor().newInstance()
-            field.set(configuration, fieldValue)
-        }
 
         // validator with @ConfigValidator
         if (field.isAnnotationPresent(ConfigValidator::class.java)) {
@@ -357,43 +374,40 @@ class TomlConfiguration : ConfigurationProvider() {
         }
 
         // load nested map
-        if (fieldValue != null && fieldValue.javaClass.isAnnotationPresent(Config::class.java)) {
-            deserializeFromMap(
+        if (fieldType.isAnnotationPresent(Config::class.java)) {
+            val fieldValue = fieldType.getConstructor().newInstance()
+            fillFromMap(
                 fieldValue.javaClass,
                 fieldValue,
                 map[configPath] as Map<String, Any>,
                 fieldValue.javaClass.getAnnotation(Config::class.java),
             )
-            return
+
+            return fieldValue
         }
 
-        // load SerializableConfigEntry
-        if (fieldValue is SerializableConfigEntry) {
-            val configEntry = fieldValue
-            configEntry.deserialize(configValue)
-            return
-        }
+        return convertToFieldValue(field.type, configValue, field)
+    }
 
-        // primitive types
-        convertPrimitives(fieldType, configValue)?.let {
-            return field.set(configuration, it)
-        }
+    private fun convertToFieldValue(
+        targetClass: Class<*>,
+        configValue: Any,
+        field: Field? = null,
+    ): Any {
+        val primitive = convertPrimitives(targetClass, configValue)
+        if (primitive != null) return primitive
 
-        if (fieldType.isEnum) {
-            val enumClass = fieldType as Class<out Enum<*>>
+        if (targetClass.isEnum) {
+            val enumClass = targetClass as Class<out Enum<*>>
 
-            try {
-                field.set(configuration, java.lang.Enum.valueOf(enumClass, configValue as String))
+            return try {
+                java.lang.Enum.valueOf(enumClass, configValue as String)
             } catch (_: Exception) {
-                field.set(configuration, enumClass.enumConstants[0])
+                enumClass.enumConstants[0]
             }
-
-            return
         }
 
-        if (Map::class.java.isAssignableFrom(fieldType) &&
-            fieldValue != null
-        ) {
+        if (configValue is Map<*, *> && field != null) {
             val newMap = LinkedHashMap<Any, Any>()
             val configMap = configValue as Map<Any, Any>
 
@@ -403,7 +417,7 @@ class TomlConfiguration : ConfigurationProvider() {
             if (mapValueType != null && mapValueType.isAnnotationPresent(Config::class.java)) {
                 configMap.forEach { (key, value) ->
                     val deserializedValue = mapValueType.getConstructor().newInstance()
-                    deserializeFromMap(
+                    fillFromMap(
                         mapValueType,
                         deserializedValue,
                         value as Map<String, Any>,
@@ -417,11 +431,33 @@ class TomlConfiguration : ConfigurationProvider() {
                 }
             }
 
-            field.set(configuration, newMap)
-            return
+            return newMap
         }
 
-        field.set(configuration, fieldType.cast(configValue))
+        if (configValue is List<*> && field != null) {
+            val pt = field.genericType as ParameterizedType
+            val listTypeArg = pt.actualTypeArguments.getOrNull(0)
+                ?: throw IllegalArgumentException("Cannot determine list element type")
+
+            return convertListValue(configValue, listTypeArg)
+        }
+
+        throw IllegalArgumentException("Unsupported field type: $targetClass ($configValue)")
+    }
+
+    private fun convertListValue(list: List<*>, typeArg: Type): List<*> {
+        return list.map { element ->
+            when {
+                element == null -> null
+                typeArg is ParameterizedType && typeArg.rawType == List::class.java -> {
+                    val nestedTypeArg = typeArg.actualTypeArguments.getOrNull(0)
+                        ?: throw IllegalArgumentException("Cannot determine nested list element type")
+                    convertListValue(element as List<*>, nestedTypeArg)
+                }
+                typeArg is Class<*> -> convertToFieldValue(typeArg, element)
+                else -> element
+            }
+        }
     }
 
     private fun convertPrimitives(targetClass: Class<*>, targetObject: Any): Any? {
@@ -443,6 +479,8 @@ class TomlConfiguration : ConfigurationProvider() {
 
             Boolean::class.javaPrimitiveType,
             Boolean::class.javaObjectType -> (targetObject as Boolean)
+
+            String::class.java -> (targetObject as String)
 
             else -> null
         }

@@ -28,6 +28,7 @@ class TestKtConfig {
                 # Pepega
                 string_with_comment = ""
                 enum_field = "TEST_1"
+                enum_list = ["TEST_1", "TEST_2"]
                 #Only if null
                 #pepega_null_string = "pepega"
                 
@@ -65,6 +66,7 @@ class TestKtConfig {
             # Pepega
             string_with_comment = ""
             enum_field = "TEST_1"
+            enum_list = ["TEST_1"]
             #Only if null
             #pepega_null_string = "pepega"
 
@@ -94,6 +96,7 @@ class TestKtConfig {
         assertEquals(65, testConfig.short)
         assertEquals("", testConfig.stringWithComment)
         assertEquals(TestConfig.PepegaEnum.TEST_1, testConfig.enumField)
+        assertEquals(listOf(TestConfig.PepegaEnum.TEST_1), testConfig.enumList)
         assertEquals(null, testConfig.nullCommentString)
 
         assertEquals(1, testConfig.stringMap.size)
@@ -128,6 +131,9 @@ class TestConfig {
 
     @ConfigField
     val enumField = PepegaEnum.TEST_1
+
+    @ConfigField
+    val enumList = listOf(PepegaEnum.TEST_1, PepegaEnum.TEST_2)
 
     @ConfigField(nullComment = "Only if null\npepega_null_string = \"pepega\"")
     val nullCommentString: String? = null
