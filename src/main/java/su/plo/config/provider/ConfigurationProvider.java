@@ -1,15 +1,20 @@
 package su.plo.config.provider;
 
+import com.google.common.hash.HashCode;
+import com.google.common.hash.Hashing;
 import org.jetbrains.annotations.NotNull;
 import su.plo.config.Config;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
+import java.math.BigInteger;
 import java.nio.file.Files;
+import java.security.MessageDigest;
 import java.util.ServiceLoader;
 import java.util.stream.StreamSupport;
 
@@ -109,9 +114,17 @@ public abstract class ConfigurationProvider {
             file.getParentFile().mkdirs();
         }
 
-        try (OutputStream outputStream = Files.newOutputStream(file.toPath())) {
-            save(configuration, outputStream);
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        save(configuration, outputStream);
+
+        if (file.exists()) {
+            HashCode existingHash = com.google.common.io.Files.asByteSource(file).hash(Hashing.sha256());
+            HashCode newHash = Hashing.sha256().hashBytes(outputStream.toByteArray());
+
+            if (existingHash.equals(newHash)) return;
         }
+
+        Files.write(file.toPath(), outputStream.toByteArray());
     }
 
     protected abstract Object load(@NotNull Class<?> configClass, @NotNull InputStream is, @NotNull Object defaultConfiguration) throws IOException;
