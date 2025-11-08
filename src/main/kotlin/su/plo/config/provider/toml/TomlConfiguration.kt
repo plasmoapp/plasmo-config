@@ -160,7 +160,7 @@ class TomlConfiguration : ConfigurationProvider() {
 
         val configAnnotation = targetClass.getAnnotation(Config::class.java)
 
-        val serialized: MutableMap<String, Any> = Maps.newHashMap()
+        val serialized: MutableMap<String, Any> = Maps.newLinkedHashMap()
 
         getFields(targetClass).forEach { field ->
             try {
