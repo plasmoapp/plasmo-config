@@ -43,6 +43,10 @@ tasks {
         useJUnitPlatform()
     }
 
+    jar {
+        archiveClassifier.set("dev")
+    }
+
     shadowJar {
         configurations = listOf(project.configurations.shadow.get())
         archiveClassifier.set("")
